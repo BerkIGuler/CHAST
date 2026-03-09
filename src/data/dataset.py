@@ -4,16 +4,17 @@ from torch.utils.data import Dataset
 from pathlib import Path
 import random
 
+
 class TDLDataset(Dataset):
     def __init__(
-        self, data_path, *, file_size, normalization_stats=None,return_pilots_only=True, num_subcarriers=120,
+        self, data_path, *, file_size=None, normalization_stats=None,return_pilots_only=True, num_subcarriers=120,
         num_symbols=14, SNRs=[0, 5, 10, 15, 20, 25, 30],
         pilot_symbols=[2, 11], pilot_every_n=2):
         """
         This class loads the data from the folder and returns a dataset of channels.
 
-        data_path: path to the folder containing the data
-        file_size: number of channels per file
+        data_path: path to the folder containing the data (root; all .npy under it are used)
+        file_size: kept for backwards compatibility but ignored (dataset infers per-file sizes)
         return_pilots_only: if True, only the LS channel estimate at pilots are returned
             if False, the LS channel estimate is returned as a sparse channel matrix with non-zero 
             values only at the pilot subcarriers and time instants.
@@ -26,7 +27,7 @@ class TDLDataset(Dataset):
         pilot_every_n: number of subcarriers between pilot subcarriers
         """
         
-        self.file_size = int(file_size)
+        # file_size is accepted but no longer used; we infer per-file sizes from the data itself.
         self.normalization_stats = normalization_stats
         self.return_pilots_only = return_pilots_only
         self.num_subcarriers = num_subcarriers
@@ -34,28 +35,38 @@ class TDLDataset(Dataset):
         self.SNRs = SNRs
         self.pilot_symbols = pilot_symbols
         self.pilot_every_n = pilot_every_n
+        self.noise_variance = self._get_noise_variance(SNRs)
 
-        self.file_list = list(Path(data_path).glob("*.npy"))
+        # Collect all .npy files under data_path (recursively)
+        self.file_list = list(Path(data_path).rglob("*.npy"))
         self.stats = self._get_stats_per_file(self.file_list)
         self.data = self._load_data_from_folder(self.file_list, self.normalization_stats)
+
+        # Build a flat index over all (file, sample_idx) pairs so we can handle
+        # heterogeneous numbers of channels per .npy file.
+        self.index = []
+        for file_path in self.file_list:
+            file_data = self.data[file_path]
+            num_channels = file_data.shape[0]
+            for sample_idx in range(num_channels):
+                self.index.append((file_path, sample_idx))
+
         self.pilot_mask = self._get_pilot_mask()
 
         self.num_pilot_symbols = len(self.pilot_symbols)
         self.num_pilot_subcarriers = int(self.pilot_mask.sum()) // self.num_pilot_symbols
 
     def __len__(self):
-        return len(self.file_list) * self.file_size
+        return len(self.index)
 
     def __getitem__(self, idx):
-        file_idx = idx // self.file_size
-        sample_idx = idx % self.file_size
-        file_path = self.file_list[file_idx]
+        file_path, sample_idx = self.index[idx]
         channels = self.data[file_path]
         channel = channels[sample_idx].squeeze().T
-    
+
         SNR = random.choice(self.SNRs)
         LS_channel_at_pilots = self._get_LS_estimate_at_pilots(channel, SNR)
-        stats = self.stats[file_path]
+        stats = self.stats[file_path].copy()
         stats["SNR"] = SNR
 
         LS_channel_at_pilots_torch = torch.from_numpy(LS_channel_at_pilots).to(torch.complex64)
@@ -83,7 +94,10 @@ class TDLDataset(Dataset):
             file_parts = file_name.split("_")
 
             if file_parts[0] == "delay":
-                delay_spread = int(file_parts[2])  # [delay, spread, y, doppler, x]
+                try:
+                    delay_spread = int(file_parts[2])  # [delay, spread, x, doppler, y] or [delay, x, doppler, y]
+                except ValueError:
+                    delay_spread = int(file_parts[1])  # [delay, x, doppler, y]
                 doppler_shift = int(file_parts[-1])
             elif file_parts[0] == "doppler":
                 doppler_shift = int(file_parts[1])  # [doppler, x, delay, spread, y]
@@ -97,6 +111,13 @@ class TDLDataset(Dataset):
                 raise ValueError(f"File {file_path} already in stats, but should not be")
             
         return stats
+    
+    def _get_noise_variance(self, SNRs):
+        noise_variances = []
+        for SNR in SNRs:
+            noise_variance = 1 / (10**(SNR / 10))
+            noise_variances.append(noise_variance)
+        return np.mean(np.array(noise_variances))
     
     def _get_LS_estimate_at_pilots(self, channel_matrix, SNR):
         # unit symbol power and unit channel power --> rx noise var = LS error var
@@ -126,3 +147,16 @@ class TDLDataset(Dataset):
         pilot_mask_subcarrier_indices = np.arange(0, self.num_subcarriers, self.pilot_every_n)
         pilot_mask[np.ix_(pilot_mask_subcarrier_indices, self.pilot_symbols)] = 1
         return pilot_mask
+
+def get_in_distribution_test_datasets(test_path, return_pilots_only=True, SNRs=[20], pilot_symbols=[2]):
+    folder_list = list(Path(test_path).glob("*"))
+    for folder in folder_list:
+        if folder.is_dir():
+            dataset = TDLDataset(
+                data_path=folder,
+                normalization_stats=None,
+                return_pilots_only=return_pilots_only,
+                SNRs=SNRs,
+                pilot_symbols=pilot_symbols
+                )
+            yield folder.name, dataset
