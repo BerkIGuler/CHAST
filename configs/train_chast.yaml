@@ -3,7 +3,7 @@ seed: 1337
 device: cuda:0
 
 paths:
-  data_path: /opt/shared/datasets/NeoRadiumTDLdataset/train/TDLA
+  data_path: opt/shared/datasets/NeoRadiumTDLdataset/train/TDLA/
   out_dir: runs/
 
 split:

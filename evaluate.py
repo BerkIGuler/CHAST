@@ -3,6 +3,7 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
+import yaml
 
 from src.data import get_in_distribution_test_datasets
 from src.model import CHAST
@@ -26,6 +27,12 @@ def _build_argparser() -> argparse.ArgumentParser:
         default=None,
         help="Device for evaluation (e.g. 'cuda' or 'cpu'). Defaults to CUDA if available, else CPU.",
     )
+    p.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="Where to save YAML results. Defaults to <checkpoint_dir>/eval_results.yaml",
+    )
     return p
 
 
@@ -33,14 +40,23 @@ def _build_argparser() -> argparse.ArgumentParser:
 def main() -> None:
     args = _build_argparser().parse_args()
 
+    data_root = Path(args.data_path)
+    if not data_root.exists():
+        # Common mistake: missing leading slash for /opt/...
+        alt = Path("/" + str(args.data_path).lstrip("/"))
+        hint = f" Did you mean '{alt}'?" if alt.exists() else ""
+        raise ValueError(f"--data_path does not exist: '{data_root}'.{hint}")
+    if not data_root.is_dir():
+        raise ValueError(f"--data_path is not a directory: '{data_root}'.")
+
+    # device selection: CLI > auto
     if args.device is not None:
-        dev_name = args.device.lower()
-        if dev_name == "cuda" and not torch.cuda.is_available():
-            print("Requested device 'cuda' but CUDA is not available; falling back to 'cpu'.")
-            dev_name = "cpu"
-        if dev_name not in ("cuda", "cpu"):
-            raise ValueError(f"Unsupported device '{args.device}'; use 'cpu' or 'cuda'.")
-        device = torch.device(dev_name)
+        dev_name_str = str(args.device).lower()
+        if dev_name_str.startswith("cuda") and not torch.cuda.is_available():
+            print(f"Requested device '{args.device}' but CUDA is not available; falling back to 'cpu'.")
+            device = torch.device("cpu")
+        else:
+            device = torch.device(dev_name_str)
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -50,8 +66,14 @@ def main() -> None:
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
 
+    checkpoint_path = Path(args.checkpoint)
+    out_path = Path(args.out) if args.out is not None else (checkpoint_path.parent / "eval_results.yaml")
+
+    results = {}
+
     for snr in args.snrs:
         print(f"=== SNR = {snr} dB ===")
+        results[int(snr)] = {}
         for folder_name, dataset in get_in_distribution_test_datasets(
             Path(args.data_path),
             return_pilots_only=False,
@@ -80,7 +102,14 @@ def main() -> None:
 
             nmse = num_sum / den_sum
             nmse_db = 10.0 * torch.log10(nmse)
-            print(f"  folder={folder_name}: NMSE (dB) = {float(nmse_db.detach().cpu()):.3f}")
+            nmse_db_f = float(nmse_db.detach().cpu())
+            results[int(snr)][str(folder_name)] = {"nmse_mean_db": nmse_db_f}
+            print(f"  folder={folder_name}: nmse_mean_db = {nmse_db_f:.6f}")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(results, f, sort_keys=True)
+    print(f"Saved results to {out_path}")
 
 
 if __name__ == "__main__":
