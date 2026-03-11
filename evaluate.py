@@ -4,7 +4,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-from src.data import TDLDataset
+from src.data import get_in_distribution_test_datasets
 from src.model import CHAST
 from src.utils import complex_grid_to_2ch
 
@@ -44,45 +44,43 @@ def main() -> None:
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataset = TDLDataset(
-        args.data_path,
-        normalization_stats=None,
-        return_pilots_only=False,
-        num_subcarriers=args.num_subcarriers,
-        num_symbols=args.num_symbols,
-        SNRs=args.snrs,
-        pilot_symbols=args.pilot_symbols,
-        pilot_every_n=args.pilot_every_n,
-    )
-    loader = DataLoader(
-        dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        pin_memory=(device.type == "cuda"),
-    )
-
     model = CHAST(num_subcarriers=args.num_subcarriers, num_symbols=args.num_symbols).to(device)
 
     ckpt = torch.load(args.checkpoint, map_location=device)
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
 
-    num_sum = torch.tensor(0.0, device=device)
-    den_sum = torch.tensor(0.0, device=device)
+    for snr in args.snrs:
+        print(f"=== SNR = {snr} dB ===")
+        for folder_name, dataset in get_in_distribution_test_datasets(
+            Path(args.data_path),
+            return_pilots_only=False,
+            SNRs=[snr],
+            pilot_symbols=args.pilot_symbols,
+        ):
+            loader = DataLoader(
+                dataset,
+                batch_size=args.batch_size,
+                shuffle=False,
+                num_workers=args.num_workers,
+                pin_memory=(device.type == "cuda"),
+            )
 
-    for ls_sparse, h_true, _stats in loader:
-        x = complex_grid_to_2ch(ls_sparse).to(device)
-        y = complex_grid_to_2ch(h_true).to(device)
-        pred = model(x, sparse_input=x)
+            num_sum = torch.tensor(0.0, device=device)
+            den_sum = torch.tensor(0.0, device=device)
 
-        err = pred - y
-        num_sum += (err * err).sum()
-        den_sum += (y * y).sum()
+            for ls_sparse, h_true, _stats in loader:
+                x = complex_grid_to_2ch(ls_sparse).to(device)
+                y = complex_grid_to_2ch(h_true).to(device)
+                pred = model(x, sparse_input=x)
 
-    nmse = num_sum / den_sum
-    nmse_db = 10.0 * torch.log10(nmse)
-    print(f"NMSE (dB): {float(nmse_db.detach().cpu()):.3f}")
+                err = pred - y
+                num_sum += (err * err).sum()
+                den_sum += (y * y).sum()
+
+            nmse = num_sum / den_sum
+            nmse_db = 10.0 * torch.log10(nmse)
+            print(f"  folder={folder_name}: NMSE (dB) = {float(nmse_db.detach().cpu()):.3f}")
 
 
 if __name__ == "__main__":
