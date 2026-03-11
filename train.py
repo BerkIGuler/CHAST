@@ -1,7 +1,7 @@
 import argparse
 import random
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
 import numpy as np
 import torch
@@ -63,7 +63,6 @@ def _build_argparser() -> argparse.ArgumentParser:
     p.add_argument(
         "config",
         type=str,
-        required=True,
         help="Path to YAML config.",
     )
     # optional device override (cpu / cuda)
@@ -76,7 +75,7 @@ def _build_argparser() -> argparse.ArgumentParser:
     return p
 
 
-def _load_yaml(path: str | Path) -> Dict[str, Any]:
+def _load_yaml(path: Union[str, Path]) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
@@ -124,14 +123,17 @@ def main() -> None:
     dev_name = args.device or cfg_device
     if dev_name is None:
         dev_name = "cuda:0" if torch.cuda.is_available() else "cpu"
-    dev_name_lower = str(dev_name).lower()
-    if dev_name_lower == "cuda" and not torch.cuda.is_available():
-        print("Requested device 'cuda' but no CUDA available; falling back to 'cpu'.")
-        dev_name_lower = "cpu"
-    if dev_name_lower not in ("cuda", "cpu"):
-        raise ValueError(f"Unsupported device '{dev_name}'; use 'cpu' or 'cuda'.")
-        
-    device = torch.device(dev_name_lower)
+    dev_name_str = str(dev_name).lower()
+    if dev_name_str.startswith("cuda"):
+        if not torch.cuda.is_available():
+            print(f"Requested device '{dev_name}' but no CUDA available; falling back to 'cpu'.")
+            device = torch.device("cpu")
+        else:
+            device = torch.device(dev_name_str)  # supports 'cuda', 'cuda:0', 'cuda:1', ...
+    elif dev_name_str == "cpu":
+        device = torch.device("cpu")
+    else:
+        raise ValueError(f"Unsupported device '{dev_name}'; use 'cpu' or 'cuda[:index]'.")
 
     data_path = _cfg_get(cfg, "paths.data_path")
     if not data_path:

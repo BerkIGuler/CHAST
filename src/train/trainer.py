@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from src.utils import complex_grid_to_2ch
+
+from tqdm.auto import tqdm
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -137,7 +139,8 @@ class Trainer:
         total_weighted_loss = 0.0
         total_samples = 0
 
-        for batch in self.train_loader:
+        pbar = tqdm(self.train_loader, desc="train", leave=False)
+        for batch in pbar:
             x, y = self._batch_to_xy(batch, self.device)
             batch_size = x.size(0)
 
@@ -151,6 +154,7 @@ class Trainer:
 
             total_weighted_loss += float(loss.detach().cpu()) * batch_size
             total_samples += batch_size
+            pbar.set_postfix(mse=float(loss.detach().cpu()))
 
         return total_weighted_loss / max(total_samples, 1)
 
@@ -161,12 +165,15 @@ class Trainer:
         num_sum = torch.tensor(0.0, device=self.device)
         den_sum = torch.tensor(0.0, device=self.device)
 
-        for batch in self.val_loader:
+        pbar = tqdm(self.val_loader, desc="val", leave=False)
+        for batch in pbar:
             x, y = self._batch_to_xy(batch, self.device)
             pred = self.model(x, sparse_input=x)
             bnum, bden = self._nmse_sums(pred, y)
             num_sum += bnum
             den_sum += bden
+            nmse = num_sum / den_sum
+            pbar.set_postfix(nmse_db=float((10.0 * torch.log10(nmse)).detach().cpu()))
 
         nmse = num_sum / den_sum
         nmse_db = 10.0 * torch.log10(nmse)
@@ -185,12 +192,12 @@ class Trainer:
 
     @staticmethod
     def load_checkpoint(
-        path: str | Path,
+        path: Union[str, Path],
         *,
         model: nn.Module,
         optimizer: Optional[torch.optim.Optimizer] = None,
         scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
-        map_location: str | torch.device = "cpu",
+        map_location: Union[str, torch.device] = "cpu",
     ) -> Dict[str, Any]:
         ckpt = torch.load(str(path), map_location=map_location)
         model.load_state_dict(ckpt["model_state_dict"])
