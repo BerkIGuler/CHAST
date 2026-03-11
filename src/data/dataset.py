@@ -7,14 +7,13 @@ import random
 
 class TDLDataset(Dataset):
     def __init__(
-        self, data_path, *, file_size=None, normalization_stats=None,return_pilots_only=True, num_subcarriers=120,
+        self, data_path, *, normalization_stats=None,return_pilots_only=True, num_subcarriers=120,
         num_symbols=14, SNRs=[0, 5, 10, 15, 20, 25, 30],
-        pilot_symbols=[2, 11], pilot_every_n=2):
+        pilot_symbols=[2, 7, 11], pilot_every_n=2):
         """
         This class loads the data from the folder and returns a dataset of channels.
 
         data_path: path to the folder containing the data (root; all .npy under it are used)
-        file_size: kept for backwards compatibility but ignored (dataset infers per-file sizes)
         return_pilots_only: if True, only the LS channel estimate at pilots are returned
             if False, the LS channel estimate is returned as a sparse channel matrix with non-zero 
             values only at the pilot subcarriers and time instants.
@@ -148,7 +147,7 @@ class TDLDataset(Dataset):
         pilot_mask[np.ix_(pilot_mask_subcarrier_indices, self.pilot_symbols)] = 1
         return pilot_mask
 
-def get_in_distribution_test_datasets(test_path, return_pilots_only=True, SNRs=[20], pilot_symbols=[2]):
+def get_in_distribution_test_datasets(test_path, return_pilots_only=False, SNRs=[20], pilot_symbols=[2]):
     folder_list = list(Path(test_path).glob("*"))
     for folder in folder_list:
         if folder.is_dir():
