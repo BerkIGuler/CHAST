@@ -10,6 +10,11 @@ from torch.utils.data import DataLoader
 
 from src.utils import complex_grid_to_2ch
 
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except Exception:  # pragma: no cover
+    SummaryWriter = None  # type: ignore[assignment]
+
 
 @dataclass(frozen=True)
 class EarlyStoppingConfig:
@@ -39,6 +44,8 @@ class Trainer:
         val_loader: DataLoader,
         checkpoint: CheckpointConfig,
         early_stopping: EarlyStoppingConfig = EarlyStoppingConfig(),
+        run_config: Optional[Dict[str, Any]] = None,
+        tb_writer: Optional["SummaryWriter"] = None,
     ) -> None:
         self.model = model
         self.device = device
@@ -48,6 +55,8 @@ class Trainer:
         self.val_loader = val_loader
         self.checkpoint = checkpoint
         self.early_stopping = early_stopping
+        self.run_config = run_config
+        self.tb_writer = tb_writer
 
         self.criterion = nn.MSELoss()
 
@@ -105,6 +114,12 @@ class Trainer:
                 f"epoch {epoch:03d} | train_mse={train_loss:.6e} | val_nmse_db={val_nmse_db:.3f} | best={self.best_val_nmse_db:.3f} @ {self.best_epoch:03d} | lr={lr_str}"
             )
 
+            if self.tb_writer is not None:
+                self.tb_writer.add_scalar("loss/train_mse", train_loss, epoch)
+                self.tb_writer.add_scalar("nmse/val_db", val_nmse_db, epoch)
+                if isinstance(lr, float):
+                    self.tb_writer.add_scalar("optim/lr", lr, epoch)
+
             if self._no_improve >= self.early_stopping.patience:
                 print(
                     f"early stopping: no improvement for {self.early_stopping.patience} epochs (min_delta={self.early_stopping.min_delta})"
@@ -161,6 +176,7 @@ class Trainer:
         payload = {
             "epoch": epoch,
             "val_nmse_db": val_nmse_db,
+            "config": self.run_config,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler is not None else None,

@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import yaml
 from torch.utils.data import DataLoader, random_split
+from torch.utils.tensorboard import SummaryWriter
 
 from src.data import TDLDataset
 from src.model import CHAST
@@ -136,6 +137,21 @@ def main() -> None:
     if not data_path:
         raise ValueError("Missing `paths.data_path` in config.")
     out_dir = str(_cfg_get(cfg, "paths.out_dir", DEFAULTS["paths"]["out_dir"]))
+    out_dir_path = Path(out_dir)
+    out_dir_path.mkdir(parents=True, exist_ok=True)
+
+    # Save the (possibly user-edited) config once per run for reproducibility.
+    resolved_cfg: Dict[str, Any] = dict(cfg)
+    resolved_cfg.setdefault("seed", seed)
+    resolved_cfg.setdefault("device", str(device))
+    resolved_cfg.setdefault("paths", {})
+    if isinstance(resolved_cfg["paths"], dict):
+        resolved_cfg["paths"].setdefault("data_path", str(data_path))
+        resolved_cfg["paths"].setdefault("out_dir", str(out_dir_path))
+        resolved_cfg["paths"].setdefault("config_path", str(Path(args.config).resolve()))
+    config_dump_path = out_dir_path / "config.yaml"
+    with open(config_dump_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(resolved_cfg, f, sort_keys=False)
 
     dataset = TDLDataset(
         data_path,
@@ -202,6 +218,8 @@ def main() -> None:
     t_max = int(_cfg_get(cfg, "optim.scheduler.t_max_epochs", DEFAULTS["optim"]["scheduler"]["t_max_epochs"]))
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max)
 
+    tb_writer = SummaryWriter(log_dir=str(out_dir_path / "tb"))
+
     trainer = Trainer(
         model=model,
         device=device,
@@ -209,15 +227,18 @@ def main() -> None:
         scheduler=scheduler,
         train_loader=train_loader,
         val_loader=val_loader,
-        checkpoint=CheckpointConfig(out_dir=Path(out_dir), filename="best.pt"),
+        checkpoint=CheckpointConfig(out_dir=out_dir_path, filename="best.pt"),
         early_stopping=EarlyStoppingConfig(
             patience=int(_cfg_get(cfg, "early_stopping.patience", DEFAULTS["early_stopping"]["patience"])),
             min_delta=float(_cfg_get(cfg, "early_stopping.min_delta", DEFAULTS["early_stopping"]["min_delta"])),
         ),
+        run_config=resolved_cfg,
+        tb_writer=tb_writer,
     )
 
     summary = trainer.train(epochs=epochs)
     print("done:", summary)
+    tb_writer.close()
 
 
 if __name__ == "__main__":
