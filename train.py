@@ -1,22 +1,22 @@
 import argparse
+import random
 from pathlib import Path
 from typing import Any, Dict
-import random
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, random_split
 import yaml
+from torch.utils.data import DataLoader, random_split
 
-from src.data.dataset import TDLDataset
-from src.model.chast import CHAST
-from src.train.trainer import CheckpointConfig, EarlyStoppingConfig, Trainer
+from src.data import TDLDataset
+from src.model import CHAST
+from src.train import CheckpointConfig, EarlyStoppingConfig, Trainer
 
 
 DEFAULTS: Dict[str, Any] = {
     "seed": 1337,
     "paths": {
-        "out_dir": "runs/chast",
+        "out_dir": "runs",
     },
     "split": {
         "val_split": 0.1,

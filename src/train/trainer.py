@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from src.utils.complex import complex_grid_to_2ch
+from src.utils import complex_grid_to_2ch
 
 
 @dataclass(frozen=True)
@@ -153,8 +153,7 @@ class Trainer:
             num_sum += bnum
             den_sum += bden
 
-        eps = 1e-12
-        nmse = (num_sum / den_sum.clamp_min(eps)).clamp_min(eps)
+        nmse = num_sum / den_sum
         nmse_db = 10.0 * torch.log10(nmse)
         return float(nmse_db.detach().cpu())
 

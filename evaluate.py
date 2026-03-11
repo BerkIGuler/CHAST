@@ -4,9 +4,9 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-from src.data.dataset import TDLDataset
-from src.model.chast import CHAST
-from src.utils.complex import complex_grid_to_2ch
+from src.data import TDLDataset
+from src.model import CHAST
+from src.utils import complex_grid_to_2ch
 
 
 def _build_argparser() -> argparse.ArgumentParser:
@@ -15,7 +15,7 @@ def _build_argparser() -> argparse.ArgumentParser:
     p.add_argument("--checkpoint", type=str, required=True)
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--num_workers", type=int, default=4)
-    p.add_argument("--snrs", type=int, nargs="+", default=[20])
+    p.add_argument("--snrs", type=int, nargs="+", default=[0, 5, 10, 15, 20, 25, 30])
     p.add_argument("--pilot_symbols", type=int, nargs="+", default=[2, 7, 11])
     p.add_argument("--pilot_every_n", type=int, default=2)
     p.add_argument("--num_subcarriers", type=int, default=120)
@@ -77,12 +77,10 @@ def main() -> None:
         pred = model(x, sparse_input=x)
 
         err = pred - y
-        dims = tuple(range(1, pred.ndim))
-        num_sum += (err * err).sum(dim=dims).sum()
-        den_sum += (y * y).sum(dim=dims).sum()
+        num_sum += (err * err).sum()
+        den_sum += (y * y).sum()
 
-    eps = 1e-12
-    nmse = (num_sum / den_sum.clamp_min(eps)).clamp_min(eps)
+    nmse = num_sum / den_sum
     nmse_db = 10.0 * torch.log10(nmse)
     print(f"NMSE (dB): {float(nmse_db.detach().cpu()):.3f}")
 
