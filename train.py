@@ -65,12 +65,24 @@ def _build_argparser() -> argparse.ArgumentParser:
         type=str,
         help="Path to YAML config.",
     )
+    p.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Override random seed from config.",
+    )
     # optional device override (cpu / cuda)
     p.add_argument(
         "--device",
         type=str,
         default=None,
         help="Override device from config (e.g., cpu or cuda:0). If not set, config or auto is used.",
+    )
+    p.add_argument(
+        "--out_dir",
+        type=str,
+        default=None,
+        help="Override `paths.out_dir` from config (e.g., runs/exp2/tdla_2_seed1).",
     )
     return p
 
@@ -115,7 +127,8 @@ def main() -> None:
 
     cfg = _load_yaml(args.config)
 
-    seed = int(_cfg_get(cfg, "seed", DEFAULTS["seed"]))
+    # seed selection: CLI > config > default
+    seed = int(args.seed) if args.seed is not None else int(_cfg_get(cfg, "seed", DEFAULTS["seed"]))
     _set_seed(seed)
 
     # device selection: CLI > config > auto
@@ -138,19 +151,20 @@ def main() -> None:
     data_path = _cfg_get(cfg, "paths.data_path")
     if not data_path:
         raise ValueError("Missing `paths.data_path` in config.")
-    out_dir = str(_cfg_get(cfg, "paths.out_dir", DEFAULTS["paths"]["out_dir"]))
+    # output dir selection: CLI > config > default
+    out_dir = str(args.out_dir) if args.out_dir is not None else str(_cfg_get(cfg, "paths.out_dir", DEFAULTS["paths"]["out_dir"]))
     out_dir_path = Path(out_dir)
     out_dir_path.mkdir(parents=True, exist_ok=True)
 
     # Save the (possibly user-edited) config once per run for reproducibility.
     resolved_cfg: Dict[str, Any] = dict(cfg)
-    resolved_cfg.setdefault("seed", seed)
-    resolved_cfg.setdefault("device", str(device))
-    resolved_cfg.setdefault("paths", {})
-    if isinstance(resolved_cfg["paths"], dict):
-        resolved_cfg["paths"].setdefault("data_path", str(data_path))
-        resolved_cfg["paths"].setdefault("out_dir", str(out_dir_path))
-        resolved_cfg["paths"].setdefault("config_path", str(Path(args.config).resolve()))
+    resolved_cfg["seed"] = seed
+    resolved_cfg["device"] = str(device)
+    if not isinstance(resolved_cfg.get("paths"), dict):
+        resolved_cfg["paths"] = {}
+    resolved_cfg["paths"]["data_path"] = str(data_path)
+    resolved_cfg["paths"]["out_dir"] = str(out_dir_path)
+    resolved_cfg["paths"]["config_path"] = str(Path(args.config).resolve())
     config_dump_path = out_dir_path / "config.yaml"
     with open(config_dump_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(resolved_cfg, f, sort_keys=False)
