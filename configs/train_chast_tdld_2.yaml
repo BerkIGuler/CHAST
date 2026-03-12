@@ -3,8 +3,8 @@ seed: 1337
 device: cuda:0
 
 paths:
-  data_path: opt/shared/datasets/NeoRadiumTDLdataset/train/TDLA/
-  out_dir: runs/
+  data_path: /opt/shared/datasets/NeoRadiumTDLdataset/train/TDLD/
+  out_dir: runs/tdld_2/
 
 split:
   val_split: 0.1
@@ -28,7 +28,7 @@ early_stopping:
 dataset:
   num_subcarriers: 120
   num_symbols: 14
-  pilot_symbols: [2, 7, 11]
+  pilot_symbols: [2]
   pilot_every_n: 2
   snrs: [0, 5, 10, 15, 20, 25, 30]
 

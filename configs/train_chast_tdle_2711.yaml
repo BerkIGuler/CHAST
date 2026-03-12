@@ -1,0 +1,44 @@
+seed: 1337
+
+device: cuda:0
+
+paths:
+  data_path: /opt/shared/datasets/NeoRadiumTDLdataset/train/TDLE/
+  out_dir: runs/tdle_2711/
+
+split:
+  val_split: 0.1
+
+train:
+  epochs: 300
+  batch_size: 64
+  num_workers: 4
+
+optim:
+  lr: 0.001
+  weight_decay: 1e-5
+  # AdamW + CosineAnnealingLR (paper)
+  scheduler:
+    t_max_epochs: 300
+
+early_stopping:
+  patience: 50
+  min_delta: 1e-5
+
+dataset:
+  num_subcarriers: 120
+  num_symbols: 14
+  pilot_symbols: [2, 7, 11]
+  pilot_every_n: 2
+  snrs: [0, 5, 10, 15, 20, 25, 30]
+
+model:
+  cnn_filters_1: 32
+  cnn_filters_2: 2
+  patch_h: 12
+  patch_w: 14
+  embed_dim: 64
+  num_heads: 4
+  dropout: 0.1
+  kernel_size: 3
+
