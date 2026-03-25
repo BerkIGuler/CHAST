@@ -25,7 +25,7 @@ CONFIGS=(
 
 # Four experiment sets: exp2, exp3, exp4, exp5.
 # We map expN -> seed N so each set is a different seed.
-for EXP in exp2 exp3 exp4 exp5; do
+for EXP in exp1exp2 exp3 exp4 exp5; do
   SEED="${EXP#exp}" # exp2 -> 2
   for CFG in "${CONFIGS[@]}"; do
     RUN_NAME="$(basename "${CFG}" .yaml)"
