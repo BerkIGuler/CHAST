@@ -93,8 +93,17 @@ class Trainer:
         den = (target_2ch * target_2ch).sum(dim=dims)  # (B,)
         return num.sum(), den.sum()
 
-    def train(self, *, epochs: int) -> Dict[str, Any]:
-        for epoch in range(1, epochs + 1):
+    def train(self, *, epochs: int, epoch_offset: int = 0) -> Dict[str, Any]:
+        """
+        Run `epochs` training steps with a fresh optimizer/scheduler (caller responsibility).
+
+        `epoch_offset` is added so TensorBoard and logs use **global** 1-based epoch indices:
+        first step uses epoch == epoch_offset + 1, last == epoch_offset + epochs
+        (unless early stopping cuts short).
+        """
+        if epoch_offset < 0:
+            raise ValueError(f"epoch_offset must be >= 0, got {epoch_offset}")
+        for epoch in range(epoch_offset + 1, epoch_offset + epochs + 1):
             train_loss = self._train_one_epoch()
             val_nmse_db = self._validate()
 
@@ -189,6 +198,17 @@ class Trainer:
             "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler is not None else None,
         }
         torch.save(payload, self.checkpoint.path)
+
+    @staticmethod
+    def load_model_weights(
+        path: Union[str, Path],
+        *,
+        model: nn.Module,
+        map_location: Union[str, torch.device] = "cpu",
+    ) -> None:
+        """Load only `model_state_dict` (no optimizer/scheduler)."""
+        ckpt = torch.load(str(path), map_location=map_location)
+        model.load_state_dict(ckpt["model_state_dict"])
 
     @staticmethod
     def load_checkpoint(

@@ -1,0 +1,49 @@
+# Continuation-style run: load **weights only** from `train.load_checkpoint`, then train as a new run.
+# `train.epoch_offset`: global epochs already logged in this `paths.out_dir/tb` (here: 3000).
+# Constant LR: `optim.lr: 5e-5` and `optim.scheduler: null` (no cosine decay).
+#
+seed: 1337
+device: cuda:0
+paths:
+  data_path: /home/berkay/Desktop/research/datasets/NeoRadiumTDLdataset/train/TDLC/
+  out_dir: runs/tdlc_2711/
+split:
+  val_split: 0.1
+train:
+  epochs: 2000
+  batch_size: 64
+  num_workers: 4
+  load_checkpoint: best.pt
+  epoch_offset: 3000
+optim:
+  lr: 5.0e-05
+  weight_decay: 1e-5
+  scheduler: null
+early_stopping:
+  patience: 2000
+  min_delta: 1e-5
+dataset:
+  num_subcarriers: 120
+  num_symbols: 14
+  pilot_symbols:
+  - 2
+  - 7
+  - 11
+  pilot_every_n: 2
+  snrs:
+  - 0
+  - 5
+  - 10
+  - 15
+  - 20
+  - 25
+  - 30
+model:
+  cnn_filters_1: 32
+  cnn_filters_2: 2
+  patch_h: 12
+  patch_w: 14
+  embed_dim: 64
+  num_heads: 4
+  dropout: 0.1
+  kernel_size: 3

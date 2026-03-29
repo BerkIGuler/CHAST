@@ -26,6 +26,11 @@ DEFAULTS: Dict[str, Any] = {
         "epochs": 300,
         "batch_size": 64,
         "num_workers": 4,
+        # Optional: load only model weights before training (fresh optimizer/scheduler).
+        # Path is absolute or relative to `paths.out_dir`.
+        "load_checkpoint": None,
+        # Global epoch index already completed before this run; TB/logging start at offset+1.
+        "epoch_offset": 0,
     },
     "dataset": {
         "num_subcarriers": 120,
@@ -232,9 +237,28 @@ def main() -> None:
     lr = float(_cfg_get(cfg, "optim.lr", DEFAULTS["optim"]["lr"]))
     weight_decay = float(_cfg_get(cfg, "optim.weight_decay", DEFAULTS["optim"]["weight_decay"]))
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    t_max = int(_cfg_get(cfg, "optim.scheduler.t_max_epochs", DEFAULTS["optim"]["scheduler"]["t_max_epochs"]))
-    eta_min = float(_cfg_get(cfg, "optim.scheduler.eta_min", DEFAULTS["optim"]["scheduler"]["eta_min"]))
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max, eta_min=eta_min)
+
+    opt_cfg = cfg.get("optim")
+    if isinstance(opt_cfg, dict) and "scheduler" in opt_cfg:
+        sched_cfg = opt_cfg["scheduler"]
+    else:
+        sched_cfg = DEFAULTS["optim"]["scheduler"]
+
+    if sched_cfg is None:
+        scheduler = None
+    else:
+        if not isinstance(sched_cfg, dict):
+            raise ValueError("optim.scheduler must be a mapping or null (constant learning rate).")
+        t_max = int(
+            sched_cfg.get(
+                "t_max_epochs",
+                DEFAULTS["optim"]["scheduler"]["t_max_epochs"],
+            )
+        )
+        eta_min = float(
+            sched_cfg.get("eta_min", DEFAULTS["optim"]["scheduler"]["eta_min"])
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max, eta_min=eta_min)
 
     tb_writer = SummaryWriter(log_dir=str(out_dir_path / "tb"))
 
@@ -254,7 +278,24 @@ def main() -> None:
         tb_writer=tb_writer,
     )
 
-    summary = trainer.train(epochs=epochs)
+    load_ckpt = _cfg_get(cfg, "train.load_checkpoint", DEFAULTS["train"]["load_checkpoint"])
+    if load_ckpt:
+        ckpt_path = Path(load_ckpt)
+        if not ckpt_path.is_absolute():
+            ckpt_path = out_dir_path / ckpt_path
+        if not ckpt_path.is_file():
+            raise FileNotFoundError(
+                f"train.load_checkpoint does not exist: {ckpt_path} "
+                f"(resolved from config value {load_ckpt!r}; out_dir={out_dir_path})"
+            )
+        Trainer.load_model_weights(ckpt_path, model=model, map_location=device)
+        print(f"Loaded model weights only from {ckpt_path} (new optimizer/scheduler from config).")
+
+    epoch_offset = int(_cfg_get(cfg, "train.epoch_offset", DEFAULTS["train"]["epoch_offset"]))
+    if epoch_offset < 0:
+        raise ValueError(f"train.epoch_offset must be >= 0, got {epoch_offset}")
+
+    summary = trainer.train(epochs=epochs, epoch_offset=epoch_offset)
     print("done:", summary)
     tb_writer.close()
 
