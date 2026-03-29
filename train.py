@@ -49,6 +49,7 @@ DEFAULTS: Dict[str, Any] = {
         "weight_decay": 1e-5,
         "scheduler": {
             "t_max_epochs": 300,
+            "eta_min": 1e-4,
         },
     },
     "early_stopping": {
@@ -232,7 +233,8 @@ def main() -> None:
     weight_decay = float(_cfg_get(cfg, "optim.weight_decay", DEFAULTS["optim"]["weight_decay"]))
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     t_max = int(_cfg_get(cfg, "optim.scheduler.t_max_epochs", DEFAULTS["optim"]["scheduler"]["t_max_epochs"]))
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max)
+    eta_min = float(_cfg_get(cfg, "optim.scheduler.eta_min", DEFAULTS["optim"]["scheduler"]["eta_min"]))
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max, eta_min=eta_min)
 
     tb_writer = SummaryWriter(log_dir=str(out_dir_path / "tb"))
 

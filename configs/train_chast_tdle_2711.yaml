@@ -3,26 +3,27 @@ seed: 1337
 device: cuda:0
 
 paths:
-  data_path: /opt/shared/datasets/NeoRadiumTDLdataset/train/TDLE/
+  data_path: /home/berkay/Desktop/research/datasets/NeoRadiumTDLdataset/train/TDLE/
   out_dir: runs/tdle_2711/
 
 split:
   val_split: 0.1
 
 train:
-  epochs: 1000
+  epochs: 3000
   batch_size: 64
   num_workers: 4
 
 optim:
-  lr: 0.001
+  lr: 1e-3
   weight_decay: 1e-5
   # AdamW + CosineAnnealingLR (paper)
   scheduler:
-    t_max_epochs: 1000
+    t_max_epochs: 3000
+    eta_min: 5e-5
 
 early_stopping:
-  patience: 200
+  patience: 3000
   min_delta: 1e-5
 
 dataset:
